@@ -38,68 +38,85 @@ public class TodtRoundPlugin extends Plugin
 	@Inject
 	private TodtRoundOverlay overlay;
 
-	private boolean pluginActive = false;
-	private boolean todtActive = false;
-	private boolean wasTodtActive = false;
-	private double avgRoundExperience = 0;
-	private double roundsRemaining = 0;
-	private int roundExperience = 0;
-	private int lastExperience = 0;
-	private boolean giveBonusXp = false;
-	private ArrayList<Integer> xpList = new ArrayList<>();
+	final int WINTERTODT_REGION_ID = 6462; 
+	final int WINTERTODT_ENERGY_COMP_ID = 25952282;
 
-	private boolean inTodtRegion()
+	private boolean isInWintertodtRegion = false;
+	private boolean isRoundActive = false;
+	private boolean wasRoundActive = false;
+	private double averageExperiencePerRound = 0;
+	private double estimatedRoundsRemaining = 0;
+	private int currentRoundExperience = 0;
+	private int previousTotalExperience = 0;
+	private boolean shouldAddBonusExperience = false;
+	private ArrayList<Integer> roundExperienceHistory = new ArrayList<>();
+
+	private boolean isPlayerInWintertodtRegion()
 	{
 		if (client.getLocalPlayer() == null) return false;
 
-		return client.getLocalPlayer().getWorldLocation().getRegionID() == 6462;
+		return client.getLocalPlayer().getWorldLocation().getRegionID() == WINTERTODT_REGION_ID;
 	}	
 
-	private int getTodtEnergy()
+	private int getWintertodtEnergy()
 	{
 		if (client.getLocalPlayer() == null) return 0;
 
-		Widget wtEnergyWidget = client.getWidget(25952282);
+		Widget energyWidget = client.getWidget(WINTERTODT_ENERGY_COMP_ID);
 
-		if (!inTodtRegion() || wtEnergyWidget == null) return 0;
+		if (!isPlayerInWintertodtRegion() || energyWidget == null) return 0;
 
-		Pattern regex = Pattern.compile("\\d+");
-		Matcher bossEnergy = regex.matcher(wtEnergyWidget.getText().toString());
+		Pattern numberPattern = Pattern.compile("\\d+");
+		Matcher energyMatcher = numberPattern.matcher(energyWidget.getText().toString());
 
-		if (!bossEnergy.find()) return 0;
+		if (!energyMatcher.find()) return 0;
 
-		return Integer.parseInt(bossEnergy.group(0));
+		return Integer.parseInt(energyMatcher.group(0));
 	}
 
-	private void calcAvgExperience()
+	private void calculateAverageExperience()
 	{
-		if (giveBonusXp)
-		{
-			roundExperience += client.getRealSkillLevel(Skill.FIREMAKING) * 100;
+
+		if (currentRoundExperience == 0) {
+			log.debug("Round complete. You didn't participate so ignoring XP.");
+			return;
 		}
 
-		xpList.add(roundExperience);
-		roundExperience = 0;
-
-		if (xpList.size() > 20) xpList.remove(0);
-
-		int sum = 0;
-		for (int xp : xpList) sum += xp;
-
-		avgRoundExperience = 0;
-		if (!xpList.isEmpty())
+		if (shouldAddBonusExperience)
 		{
-			avgRoundExperience = (double) sum / xpList.size();
+			currentRoundExperience += client.getRealSkillLevel(Skill.FIREMAKING) * 100;
+		}
+
+		roundExperienceHistory.add(currentRoundExperience);
+		currentRoundExperience = 0;
+
+		if (roundExperienceHistory.size() > 20) roundExperienceHistory.remove(0);
+
+		int totalExperience = 0;
+		for (int xp : roundExperienceHistory) totalExperience += xp;
+
+		averageExperiencePerRound = 0;
+		if (!roundExperienceHistory.isEmpty())
+		{
+			averageExperiencePerRound = (double) totalExperience / roundExperienceHistory.size();
+			log.debug("Round complete. XP this round: {}, Average XP: {:.0f} (over {} rounds)", 
+				roundExperienceHistory.get(roundExperienceHistory.size() - 1), 
+				averageExperiencePerRound, 
+				roundExperienceHistory.size());
 		}
 
 	}
 
-	private void calcRoundsRemaining()
+	private void calculateRoundsRemaining()
 	{
-		int fmLevel = client.getRealSkillLevel(Skill.FIREMAKING);
-		int xpForNextLevel = Experience.getXpForLevel(fmLevel + 1);
-		int xpRemaining = xpForNextLevel - client.getSkillExperience(Skill.FIREMAKING);
-		roundsRemaining = xpRemaining / avgRoundExperience;
+		int firemakingLevel = client.getRealSkillLevel(Skill.FIREMAKING);
+		int experienceForNextLevel = Experience.getXpForLevel(firemakingLevel + 1);
+		int experienceRemaining = experienceForNextLevel - client.getSkillExperience(Skill.FIREMAKING);
+		estimatedRoundsRemaining = experienceRemaining / averageExperiencePerRound;
+		log.debug("Estimated rounds to level {}: {} ({} XP remaining)", 
+			firemakingLevel + 1, 
+			(int)Math.ceil(estimatedRoundsRemaining), 
+			experienceRemaining);
 	}
 
 	@Override
@@ -118,33 +135,32 @@ public class TodtRoundPlugin extends Plugin
 	public void onGameTick(GameTick gameTick)
 	{
 
-		if (inTodtRegion())
+		if (isPlayerInWintertodtRegion())
 		{
-			int hp = getTodtEnergy();
-			todtActive = hp != 0;
-			pluginActive = true;
+			int bossEnergy = getWintertodtEnergy();
+			isRoundActive = bossEnergy != 0;
+			isInWintertodtRegion = true;
 		}
 		else
 		{
-			todtActive = false;
-			pluginActive = false;
+			isRoundActive = false;
+			isInWintertodtRegion = false;
 		}
 
-		if (!todtActive && wasTodtActive)
+		if (!isRoundActive && wasRoundActive)
 		{
-			calcAvgExperience();
-			calcRoundsRemaining();
-			wasTodtActive = false;
-			log.debug("Round Ended");
+			calculateAverageExperience();
+			calculateRoundsRemaining();
+			wasRoundActive = false;
 		}
-		else if (todtActive && !wasTodtActive)
+		else if (isRoundActive && !wasRoundActive)
 		{
-			wasTodtActive = true;
-			log.debug("Round Started");
+			wasRoundActive = true;
+			log.debug("Wintertodt round started");
 
-			// fetch xp at the start of todt incase player did fm outside
-			lastExperience = client.getSkillExperience(Skill.FIREMAKING);
-			giveBonusXp = false;
+			// Fetch XP at the start of round in case player did firemaking outside Wintertodt
+			previousTotalExperience = client.getSkillExperience(Skill.FIREMAKING);
+			shouldAddBonusExperience = false;
 		}
 
 	}
@@ -152,48 +168,49 @@ public class TodtRoundPlugin extends Plugin
 	@Subscribe
 	public void onStatChanged(StatChanged statChanged)
 	{
-		if (!pluginActive || statChanged.getSkill() != Skill.FIREMAKING) return;
+		if (!isInWintertodtRegion || statChanged.getSkill() != Skill.FIREMAKING) return;
 
-		int xp = statChanged.getXp();
-		int xpGained = xp - lastExperience;
+		int currentExperience = statChanged.getXp();
+		int experienceGained = currentExperience - previousTotalExperience;
 
-		// ignore end of round xp drop
-		if (xpGained > 4500) return;
+		// Ignore end of round XP drop
+		if (experienceGained > 4500) return;
 
-		roundExperience += xpGained;
-		lastExperience = xp;
-
-		log.debug("Gained FM XP: {}", xpGained);
+		currentRoundExperience += experienceGained;
+		previousTotalExperience = currentExperience;
 	}
 
-    @Subscribe
-    public void onChatMessage(ChatMessage chatMessage)
+	@Subscribe
+	public void onChatMessage(ChatMessage chatMessage)
 	{
-		if (!pluginActive) return;
+		if (!isInWintertodtRegion) return;
 
-        ChatMessageType chatMessageType = chatMessage.getType();
+		ChatMessageType messageType = chatMessage.getType();
 
-        if (chatMessageType != ChatMessageType.GAMEMESSAGE && chatMessageType != ChatMessageType.SPAM) {
-            return;
-        }
-
-        String msg = chatMessage.getMessageNode().getValue();
-
-		if (msg.toLowerCase().startsWith("you have helped enough to earn a supply crate"))
+		if (messageType != ChatMessageType.GAMEMESSAGE && messageType != ChatMessageType.SPAM)
 		{
-			giveBonusXp = true;
+			return;
+		}
+
+		String message = chatMessage.getMessageNode().getValue();
+
+		if (message.toLowerCase().startsWith("you have helped enough to earn a supply crate"))
+		{
+			shouldAddBonusExperience = true;
+			int bonusXp = client.getRealSkillLevel(Skill.FIREMAKING) * 100;
+			log.debug("Supply crate earned! Bonus XP will be added: {}", bonusXp);
 		}
 
 	}
 
 	public int getRoundsRemaining()
 	{
-		return (int)Math.ceil(roundsRemaining);
+		return (int)Math.ceil(estimatedRoundsRemaining);
 	}
 
-	public double getAvgRoundExperience()
+	public double getAverageRoundExperience()
 	{
-		return avgRoundExperience;
+		return averageExperiencePerRound;
 	}
 
 	@Provides

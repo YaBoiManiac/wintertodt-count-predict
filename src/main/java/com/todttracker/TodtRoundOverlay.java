@@ -31,19 +31,19 @@ public class TodtRoundOverlay extends OverlayPanel {
     @Override
     public Dimension render(Graphics2D graphics) {
         panelComponent.getChildren().add(TitleComponent.builder()
-                .text("Wintertodt Tracker")
+                .text("Round Tracker")
                 .color(config.textColor())
                 .build());
 
         panelComponent.getChildren().add(LineComponent.builder()
                 .left("Rounds:")
-                .right(String.format("%.0f", plugin.getRoundsRemaining()))
+                .right(String.format("%d", plugin.getRoundsRemaining()))
                 .rightColor(config.textColor())
                 .build());
 
         panelComponent.getChildren().add(LineComponent.builder()
                 .left("Avg XP:")
-                .right(String.format("%.0f", plugin.getAvgRoundExperience()))
+                .right(String.format("%.0f", plugin.getAverageRoundExperience()))
                 .rightColor(config.textColor())
                 .build());
 
