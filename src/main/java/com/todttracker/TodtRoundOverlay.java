@@ -43,7 +43,7 @@ public class TodtRoundOverlay extends OverlayPanel {
 
         panelComponent.getChildren().add(LineComponent.builder()
                 .left("Avg XP:")
-                .right(String.format("%.0f", plugin.getAverageRoundExperience()))
+                .right(String.format("%,.0f", plugin.getAverageRoundExperience()))
                 .rightColor(config.textColor())
                 .build());
 
