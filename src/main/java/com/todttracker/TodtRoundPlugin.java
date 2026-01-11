@@ -16,6 +16,7 @@ import net.runelite.api.events.*;
 import net.runelite.api.widgets.Widget;
 import net.runelite.client.config.ConfigManager;
 import net.runelite.client.eventbus.Subscribe;
+import net.runelite.client.events.ConfigChanged;
 import net.runelite.client.plugins.Plugin;
 import net.runelite.client.plugins.PluginDescriptor;
 import net.runelite.client.ui.overlay.OverlayManager;
@@ -50,6 +51,10 @@ public class TodtRoundPlugin extends Plugin
 	private int previousTotalExperience = 0;
 	private boolean shouldAddBonusExperience = false;
 	private ArrayList<Integer> roundExperienceHistory = new ArrayList<>();
+	private long roundStartTime = 0;
+	private ArrayList<Long> roundDurationHistory = new ArrayList<>();
+	private double averageTimePerRound = 0;
+	private double estimatedTimeRemaining = 0;
 
 	private boolean isPlayerInWintertodtRegion()
 	{
@@ -107,14 +112,44 @@ public class TodtRoundPlugin extends Plugin
 
 	}
 
+	private void calculateAverageTime()
+	{
+		if (roundDurationHistory.isEmpty()) return;
+
+		long totalTime = 0;
+		for (long duration : roundDurationHistory) totalTime += duration;
+
+		averageTimePerRound = (double) totalTime / roundDurationHistory.size();
+	}
+
 	private void calculateRoundsRemaining()
 	{
 		int firemakingLevel = client.getRealSkillLevel(Skill.FIREMAKING);
-		int experienceForNextLevel = Experience.getXpForLevel(firemakingLevel + 1);
+		int targetFiremakingLevel = firemakingLevel + 1;
+		int experienceForNextLevel = 0;
+		if (config.useTargetLvl() && config.targetLvl() > firemakingLevel)
+		{
+			try
+			{
+				experienceForNextLevel = Experience.getXpForLevel(config.targetLvl());
+				targetFiremakingLevel = config.targetLvl();
+			}
+			catch (IllegalArgumentException ex)
+			{
+				experienceForNextLevel = Experience.getXpForLevel(firemakingLevel + 1);
+				log.debug("Invalid Custom Target Level");
+			}
+		}
+		else
+		{
+			experienceForNextLevel = Experience.getXpForLevel(firemakingLevel + 1);
+		}
+
 		int experienceRemaining = experienceForNextLevel - client.getSkillExperience(Skill.FIREMAKING);
 		estimatedRoundsRemaining = experienceRemaining / averageExperiencePerRound;
+		estimatedTimeRemaining = estimatedRoundsRemaining * averageTimePerRound;
 		log.debug("Estimated rounds to level {}: {} ({} XP remaining)", 
-			firemakingLevel + 1, 
+			targetFiremakingLevel, 
 			(int)Math.ceil(estimatedRoundsRemaining), 
 			experienceRemaining);
 	}
@@ -149,13 +184,25 @@ public class TodtRoundPlugin extends Plugin
 
 		if (!isRoundActive && wasRoundActive)
 		{
+			// Record round duration
+			if (roundStartTime > 0 && currentRoundExperience > 0)
+			{
+				long roundDuration = System.currentTimeMillis() - roundStartTime;
+				roundDurationHistory.add(roundDuration);
+				if (roundDurationHistory.size() > 20) roundDurationHistory.remove(0);
+				log.debug("Round duration: {} seconds", roundDuration / 1000.0);
+			}
+
 			calculateAverageExperience();
+			calculateAverageTime();
 			calculateRoundsRemaining();
 			wasRoundActive = false;
+			roundStartTime = 0;
 		}
 		else if (isRoundActive && !wasRoundActive)
 		{
 			wasRoundActive = true;
+			roundStartTime = System.currentTimeMillis();
 			log.debug("Wintertodt round started");
 
 			// Fetch XP at the start of round in case player did firemaking outside Wintertodt
@@ -203,14 +250,51 @@ public class TodtRoundPlugin extends Plugin
 
 	}
 
+	@Subscribe
+	public void onConfigChanged(ConfigChanged event)
+	{
+		if (!event.getGroup().equals("todttracker")) return;
+
+		String key = event.getKey();
+		if (key.equals("targetLvl") || key.equals("useTargetLvl"))
+		{
+			// Recalculate when target level settings change
+			if (!roundExperienceHistory.isEmpty())
+			{
+				calculateRoundsRemaining();
+				log.debug("Target level updated, recalculating estimates");
+			}
+		}
+	}
+
 	public int getRoundsRemaining()
 	{
 		return (int)Math.ceil(estimatedRoundsRemaining);
 	}
 
+	public int getTargetFiremakingLevel()
+	{
+		int firemakingLevel = client.getRealSkillLevel(Skill.FIREMAKING);
+		if (config.useTargetLvl() && config.targetLvl() > firemakingLevel)
+		{
+			return config.targetLvl();
+		}
+		return firemakingLevel + 1;
+	}
+
 	public double getAverageRoundExperience()
 	{
 		return averageExperiencePerRound;
+	}
+
+	public double getAverageTimePerRound()
+	{
+		return averageTimePerRound / 1000.0; // Convert to seconds
+	}
+
+	public double getEstimatedTimeRemaining()
+	{
+		return estimatedTimeRemaining / 1000.0; // Convert to seconds
 	}
 
 	@Provides

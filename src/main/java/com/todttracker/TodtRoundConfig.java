@@ -20,4 +20,34 @@ public interface TodtRoundConfig extends Config
 		return new Color(0.0f, 1.0f, 0.0f, 1.0f);
 	}
 
+	@ConfigItem(
+		keyName = "targetLvl",
+		name = "Target Lvl",
+		description = "Set your Target Level",
+		position = 1
+	)
+	default int targetLvl() {
+		return 0;
+	}
+
+	@ConfigItem(
+		keyName = "useTargetLvl",
+		name = "Use Target Level",
+		description = "Whether you use the target level",
+		position = 2
+	)
+	default boolean useTargetLvl() {
+		return false;
+	}
+
+	@ConfigItem(
+		keyName = "showTimeStats",
+		name = "Show Time Stats",
+		description = "Show average time and estimated time remaining",
+		position = 3
+	)
+	default boolean showTimeStats() {
+		return true;
+	}
+
 }

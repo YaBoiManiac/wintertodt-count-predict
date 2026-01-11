@@ -31,12 +31,20 @@ public class TodtRoundOverlay extends OverlayPanel {
     @Override
     public Dimension render(Graphics2D graphics) {
         panelComponent.getChildren().add(TitleComponent.builder()
-                .text("Round Tracker")
+                .text("ROUND TRACKER")
                 .color(config.textColor())
                 .build());
 
+        if (config.useTargetLvl()) {
+            panelComponent.getChildren().add(LineComponent.builder()
+                    .left("Target Level:")
+                    .right(String.format("%d", plugin.getTargetFiremakingLevel()))
+                    .rightColor(config.textColor())
+                    .build());
+        }
+
         panelComponent.getChildren().add(LineComponent.builder()
-                .left("Rounds:")
+                .left("Rounds Left:")
                 .right(String.format("%d", plugin.getRoundsRemaining()))
                 .rightColor(config.textColor())
                 .build());
@@ -47,6 +55,36 @@ public class TodtRoundOverlay extends OverlayPanel {
                 .rightColor(config.textColor())
                 .build());
 
+        if (config.showTimeStats()) {
+            panelComponent.getChildren().add(LineComponent.builder()
+                    .left("Time Left:")
+                    .right(formatTime(plugin.getEstimatedTimeRemaining()))
+                    .rightColor(config.textColor())
+                    .build());
+
+            panelComponent.getChildren().add(LineComponent.builder()
+                    .left("Avg Time:")
+                    .right(formatTime(plugin.getAverageTimePerRound()))
+                    .rightColor(config.textColor())
+                    .build());
+        }
+
         return super.render(graphics);
+    }
+
+    private String formatTime(double seconds) {
+        if (seconds <= 0) return "--";
+        
+        int hours = (int) (seconds / 3600);
+        int minutes = (int) ((seconds % 3600) / 60);
+        int secs = (int) (seconds % 60);
+
+        if (hours > 0) {
+            return String.format("%dh %dm", hours, minutes);
+        } else if (minutes > 0) {
+            return String.format("%dm %ds", minutes, secs);
+        } else {
+            return String.format("%ds", secs);
+        }
     }
 }
